@@ -19,9 +19,8 @@ tf.random.set_seed(1618)
 #tf.logging.set_verbosity(tf.logging.ERROR)   # Uncomment for TF1.
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
-CONTENT_IMG_PATH = ""           #TODO: Add this.
-STYLE_IMG_PATH = ""             #TODO: Add this.
-
+CONTENT_IMG_PATH = "vangogh.jpg"          
+STYLE_IMG_PATH = "dog.jpg"             
 
 CONTENT_IMG_H = 500
 CONTENT_IMG_W = 500

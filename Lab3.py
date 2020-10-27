@@ -7,7 +7,6 @@ import tensorflow.keras.backend as K
 import random
 # import imageio
 from PIL import Image
-from IPython.display import Image as imdisp
 # from scipy.misc import imresize
 # https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.fmin_l_bfgs_b.html
 from scipy.optimize import fmin_l_bfgs_b
@@ -91,8 +90,8 @@ def getRawData():
     tImg = cImg.copy()
     sImg = load_img(STYLE_IMG_PATH)
     print("      Images have been loaded.")
-    display(Image.open(STYLE_IMG_PATH))
-    display(Image.open(CONTENT_IMG_PATH))
+    # display(Image.open(STYLE_IMG_PATH))
+    # display(Image.open(CONTENT_IMG_PATH))
     return ((cImg, CONTENT_IMG_H, CONTENT_IMG_W), (sImg, STYLE_IMG_H, STYLE_IMG_W), (tImg, CONTENT_IMG_H, CONTENT_IMG_W))
 
 
@@ -197,7 +196,7 @@ def styleTransfer(cData, sData, tData):
         im = Image.fromarray(img)
         im.save(saveFile)
         print("      Image saved to \"%s\"." % saveFile)
-        display(im)
+        # display(im)
 
     print("   Transfer complete.")
 

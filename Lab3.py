@@ -5,22 +5,28 @@ import tensorflow as tf
 from tensorflow import keras
 import tensorflow.keras.backend as K
 import random
-from scipy.misc import imsave, imresize
-from scipy.optimize import fmin_l_bfgs_b   # https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.fmin_l_bfgs_b.html
+# import imageio
+from PIL import Image
+from IPython.display import Image as imdisp
+# from scipy.misc import imresize
+# https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.fmin_l_bfgs_b.html
+from scipy.optimize import fmin_l_bfgs_b
 from tensorflow.keras.applications import vgg19
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
 import warnings
 
+tf.compat.v1.disable_eager_execution()
+
 random.seed(1618)
 np.random.seed(1618)
-#tf.set_random_seed(1618)   # Uncomment for TF1.
+# tf.set_random_seed(1618)   # Uncomment for TF1.
 tf.random.set_seed(1618)
 
-#tf.logging.set_verbosity(tf.logging.ERROR)   # Uncomment for TF1.
+# tf.logging.set_verbosity(tf.logging.ERROR)   # Uncomment for TF1.
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
-CONTENT_IMG_PATH = "vangogh.jpg"          
-STYLE_IMG_PATH = "dog.jpg"             
+CONTENT_IMG_PATH = "me.jpg"
+STYLE_IMG_PATH = "wave.jpg"
 
 CONTENT_IMG_H = 500
 CONTENT_IMG_W = 500
@@ -28,21 +34,28 @@ CONTENT_IMG_W = 500
 STYLE_IMG_H = 500
 STYLE_IMG_W = 500
 
-CONTENT_WEIGHT = 0.1    # Alpha weight.
-STYLE_WEIGHT = 1.0      # Beta weight.
-TOTAL_WEIGHT = 1.0
+CONTENT_WEIGHT = 0.3    # Alpha weight.
+STYLE_WEIGHT = 100      # Beta weight.
+TOTAL_WEIGHT = 1
 
 TRANSFER_ROUNDS = 3
 
 
-
-#=============================<Helper Fuctions>=================================
+# =============================<Helper Fuctions>=================================
 '''
 TODO: implement this.
 This function should take the tensor and re-convert it to an image.
 '''
+
+
 def deprocessImage(img):
-    return img
+    img2 = np.copy(img)
+    img2 = img2.reshape((STYLE_IMG_H, STYLE_IMG_W, 3))
+    img2 = img2[:, :, ::-1]
+    img2[:, :, 0] += 103
+    img2[:, :, 1] += 116
+    img2[:, :, 2] += 123
+    return np.clip(img2, 0, 255).astype('uint8')
 
 
 def gramMatrix(x):
@@ -51,11 +64,13 @@ def gramMatrix(x):
     return gram
 
 
-
-#========================<Loss Function Builder Functions>======================
+# ========================<Loss Function Builder Functions>======================
 
 def styleLoss(style, gen):
-    return None   #TODO: implement.
+    print(style.shape)
+    num_features = style.shape[2]
+    img_size = STYLE_IMG_H * STYLE_IMG_W
+    return K.sum(K.square(gramMatrix(style) - gramMatrix(gen)) / (4. * (num_features)**2 * (img_size)**2))
 
 
 def contentLoss(content, gen):
@@ -63,13 +78,10 @@ def contentLoss(content, gen):
 
 
 def totalLoss(x):
-    return None   #TODO: implement.
+    return None  # TODO: implement.
 
 
-
-
-
-#=========================<Pipeline Functions>==================================
+# =========================<Pipeline Functions>==================================
 
 def getRawData():
     print("   Loading images.")
@@ -79,16 +91,18 @@ def getRawData():
     tImg = cImg.copy()
     sImg = load_img(STYLE_IMG_PATH)
     print("      Images have been loaded.")
+    display(Image.open(STYLE_IMG_PATH))
+    display(Image.open(CONTENT_IMG_PATH))
     return ((cImg, CONTENT_IMG_H, CONTENT_IMG_W), (sImg, STYLE_IMG_H, STYLE_IMG_W), (tImg, CONTENT_IMG_H, CONTENT_IMG_W))
-
 
 
 def preprocessData(raw):
     img, ih, iw = raw
     img = img_to_array(img)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        img = imresize(img, (ih, iw, 3))
+    # with warnings.catch_warnings():
+    #     warnings.simplefilter("ignore")
+    #     img_resized = Image.fromarray(img, mode="RGB").resize((ih, iw))
+    #     img = np.array(img_resized)
     img = img.astype("float64")
     img = np.expand_dims(img, axis=0)
     img = vgg19.preprocess_input(img)
@@ -97,50 +111,98 @@ def preprocessData(raw):
 
 '''
 TODO: Allot of stuff needs to be implemented in this function.
-First, make sure the model is set up properly.
+DONE: First, make sure the model is set up properly.
 Then construct the loss function (from content and style loss).
 Gradient functions will also need to be created, or you can use K.Gradients().
 Finally, do the style transfer with gradient descent.
 Save the newly generated and deprocessed images.
 '''
+
+
+class LossHelper:
+
+    def __init__(self, genTensor, outputs):
+        self._kFunction = K.function([genTensor], outputs)
+
+    def getLossAndGrad(self, x):
+        x = x.reshape((1, STYLE_IMG_H, STYLE_IMG_W, 3))
+        out = self._kFunction([x])
+        self._loss = out[0]
+        self._grad = out[1].flatten().astype('float64')
+
+    def getLoss(self, x):
+        self.getLossAndGrad(x)
+        return self._loss
+
+    def getGrad(self, x):
+        return self._grad
+
+
 def styleTransfer(cData, sData, tData):
     print("   Building transfer model.")
     contentTensor = K.variable(cData)
     styleTensor = K.variable(sData)
     genTensor = K.placeholder((1, CONTENT_IMG_H, CONTENT_IMG_W, 3))
-    inputTensor = K.concatenate([contentTensor, styleTensor, genTensor], axis=0)
-    model = None   #TODO: implement.
+    inputTensor = K.concatenate(
+        [contentTensor, styleTensor, genTensor], axis=0)
+
+    model = vgg19.VGG19(include_top=False, weights="imagenet",
+                        input_tensor=inputTensor)
     outputDict = dict([(layer.name, layer.output) for layer in model.layers])
     print("   VGG19 model loaded.")
+
     loss = 0.0
-    styleLayerNames = ["block1_conv1", "block2_conv1", "block3_conv1", "block4_conv1", "block5_conv1"]
+    styleLayerNames = ["block1_conv1", "block2_conv1",
+                       "block3_conv1", "block4_conv1", "block5_conv1"]
     contentLayerName = "block5_conv2"
+
     print("   Calculating content loss.")
     contentLayer = outputDict[contentLayerName]
     contentOutput = contentLayer[0, :, :, :]
     genOutput = contentLayer[2, :, :, :]
-    loss += None   #TODO: implement.
+    loss += CONTENT_WEIGHT * contentLoss(contentOutput, genOutput)
+
     print("   Calculating style loss.")
     for layerName in styleLayerNames:
-        loss += None   #TODO: implement.
-    loss += None   #TODO: implement.
-    # TODO: Setup gradients or use K.gradients().
+        l = outputDict[layerName]
+        styleOut = l[1, :, :, :]
+        genOut = l[2, :, :, :]
+        # Improve by increasing weight for higher layers
+        # Same as 1/len and *style_weight later
+        # weight = STYLE_WEIGHT/len(styleLayerNames)
+        # loss += weight * styleLoss(styleOut, genOut)
+        loss += STYLE_WEIGHT * styleLoss(styleOut, genOut)
+
+    # loss += None  # TODO: implement.
+    grads = K.gradients(loss, genTensor)
+    outputs = [loss]
+    outputs += grads
+    helper = LossHelper(genTensor, outputs)
+
     print("   Beginning transfer.")
+    x = tData
+    x = x.reshape((1, STYLE_IMG_H, STYLE_IMG_W, 3))
     for i in range(TRANSFER_ROUNDS):
         print("   Step %d." % i)
-        #TODO: perform gradient descent using fmin_l_bfgs_b.
+
+        out, tLoss, info = fmin_l_bfgs_b(
+            helper.getLoss, x.flatten(), helper.getGrad, maxfun=30, maxiter=1000)
         print("      Loss: %f." % tLoss)
+        print(out)
+        x = out
+
+        # Save file
         img = deprocessImage(x)
-        saveFile = None   #TODO: Implement.
-        #imsave(saveFile, img)   #Uncomment when everything is working right.
+        saveFile = f"transfer_{i}.jpg"
+        im = Image.fromarray(img)
+        im.save(saveFile)
         print("      Image saved to \"%s\"." % saveFile)
+        display(im)
+
     print("   Transfer complete.")
 
 
-
-
-
-#=========================<Main>================================================
+# =========================<Main>================================================
 
 def main():
     print("Starting style transfer program.")
@@ -150,7 +212,6 @@ def main():
     tData = preprocessData(raw[2])   # Transfer image.
     styleTransfer(cData, sData, tData)
     print("Done. Goodbye.")
-
 
 
 if __name__ == "__main__":
